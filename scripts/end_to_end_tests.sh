@@ -5,13 +5,26 @@ set -euf -o pipefail
 PASSED=0
 FAILED=0
 
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Darwin*)    ISMAC=1;;
+    *)          ISMAC=0;;
+esac
+
 TIMESCALE_IMAGE=${1:-"timescale/timescaledb:1.7.4-pg12"}
 SCRIPT_DIR=$(cd $(dirname ${0}) && pwd)
 ROOT_DIR=$(dirname ${SCRIPT_DIR})
 DB_URL="localhost:5432"
 CONNECTOR_URL="localhost:9201"
-CONNECTOR_URL_CONTAINER="host.docker.internal:9201"
 PROM_URL="localhost:9090"
+
+if [[ $ISMAC -eq 1 ]]; then
+    CONNECTOR_URL_CONTAINER="host.docker.internal:9201"
+    PROM_NETWORK="bridge"
+else
+    CONNECTOR_URL_CONTAINER="localhost:9201"
+    PROM_NETWORK="host"
+fi
 
 CONF=$(mktemp)
 
@@ -45,7 +58,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker run --rm --name e2e-tsdb --network bridge -p 5432:5432/tcp -e "POSTGRES_PASSWORD=postgres" "${TIMESCALE_IMAGE}"  > /dev/null 2>&1 &
-docker run --rm --name e2e-prom --network bridge -p 9090:9090/tcp -v "$CONF:/etc/prometheus/prometheus.yml" prom/prometheus:latest > /dev/null 2>&1  &
+docker run --rm --name e2e-prom --network $PROM_NETWORK -p 9090:9090/tcp -v "$CONF:/etc/prometheus/prometheus.yml" prom/prometheus:latest > /dev/null 2>&1  &
 
 cd $ROOT_DIR/cmd/promscale
 go get ./...
